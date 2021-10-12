@@ -1,10 +1,13 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <errno.h> 
 
 #ifndef NDEBUG
 #define LOGD(fmt, ...) printf("[DEBUG]: "fmt, ##__VA_ARGS__)
@@ -14,10 +17,9 @@
 #define LOGI(fmt, ...) printf("[INFO]: "fmt, ##__VA_ARGS__)
 #endif
 
+#define BOARDCAST_PORT  (28888)
 
-#define PORT_BEGIN  (10550)
-
-int try_bind(int port) {
+int try_bind() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         printf("socket() error!\n");
@@ -25,25 +27,40 @@ int try_bind(int port) {
     }
     struct sockaddr_in addr_in = {
             .sin_family = AF_INET,
-            .sin_port = htons(port),
+            .sin_port = htons(0),
             .sin_addr.s_addr = htonl(INADDR_ANY),
     };
     if (bind(fd, (struct sockaddr *) &addr_in, sizeof(struct sockaddr)) < 0) {
-        close(fd);
-        return -1;
+        printf("bind() error!\n");
+        exit(-1);
     }
     return fd;
 }
 
-void notify(pid_t pid, int port) {
-    union sigval value = {
-            .sival_int = port,
-    };
-    LOGD("notify port=%d\n", port);
-    if (sigqueue(pid, SIGUSR1, value) < 0) {
-        printf("sigqueue() error!\n");
-        exit(-1);
+void notify(const char* name, int socket_fd) {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(fd < 0) {
+        printf("socket() error!\n");
     }
+    int opt = -1;
+    if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &opt,sizeof(opt)) < 0) {
+        printf("setsockopt() error!\n");
+    }
+
+    struct sockaddr_in addr_this;
+    socklen_t size = sizeof(addr_this);
+    getsockname(socket_fd, (struct sockaddr *)&addr_this, &size);
+    char msg[128];
+    int len = snprintf(msg, sizeof(msg), "%s %d %s", name, 
+                       ntohs(addr_this.sin_port), inet_ntoa(addr_this.sin_addr));
+
+    struct sockaddr_in addr_to = {
+        .sin_family = AF_INET,
+        .sin_port = htons(BOARDCAST_PORT),
+        .sin_addr.s_addr = htonl(INADDR_BROADCAST),
+    };    
+    sendto(fd, msg, len, 0, (struct sockaddr*)&addr_to, sizeof(addr_to));
+    close(fd);
 }
 
 void set_nonblock(int fd) {
@@ -92,29 +109,24 @@ void relay(int fd) {
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("usage: %s <pid>\n", argv[0]);
+        printf("usage: %s <name>\n", argv[0]);
         return -1;
     }
-    pid_t pid = atoi(argv[1]);
+    const char* name = argv[1];
 
-    int socket_fd = -1;
-    int port = PORT_BEGIN;
-    do {
-        socket_fd = try_bind(++port);
-    } while (socket_fd == -1);
+    int socket_fd = try_bind();    
 
     if (listen(socket_fd, 1) < 0) {
         printf("listen() error!\n");
         exit(-1);
     }
 
-    notify(pid, port);
+    notify(name, socket_fd);
 
     struct sockaddr_in addr_in;
-    socklen_t sin_size;
+    socklen_t sin_size = sizeof(addr_in);
     int connect_fd = accept(socket_fd, (struct sockaddr *) &addr_in, &sin_size);
     if (connect_fd < 0) {
-        printf("accept() error!\n");
         exit(-1);
     }
 

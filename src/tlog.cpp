@@ -4,21 +4,21 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
-extern "C" void relay(int fd);
+extern "C" void relay(int fd, const char* name);
 
-tlog::tbuf::tbuf() {
+tlog::tbuf::tbuf(std::string name) : name(std::move(name)) {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, _fd) == -1) [[unlikely]] {
         throw std::runtime_error("[tbuf]: socketpair failed!");
     }
-    signal(SIGUSR1, SIG_IGN);
     pid_t pid = fork();
     if (pid < 0) [[unlikely]] {
         throw std::runtime_error("[tbuf]: fork failed!");
     } else if (pid == 0) {
         close(_fd[0]);
-        relay(_fd[1]);
+        write(_fd[1], &pid, sizeof(pid));
+        relay(_fd[1], this->name.c_str());
     } else {
-        // close child fd
+        read(_fd[0], &child_pid, sizeof(child_pid));
         close(_fd[1]);
     }
 }
@@ -26,9 +26,7 @@ tlog::tbuf::tbuf() {
 tlog::tbuf::~tbuf() {
     close(_fd[0]);
     int stat;
-    do {
-        wait(&stat);
-    } while (WIFEXITED(stat));
+    waitpid(child_pid, &stat, 0);
 }
 
 std::streamsize tlog::tbuf::xsputn(const char *s, std::streamsize size) {
@@ -56,7 +54,3 @@ int tlog::tbuf::overflow(int c) {
     if (len <= 0) [[unlikely]] throw std::runtime_error("[tlog]: error read subprocess!");
     return c;
 }
-
-static thread_local tlog::tbuf buf;
-thread_local std::istream tlog::tin(&buf);
-thread_local std::ostream tlog::tout(&buf);

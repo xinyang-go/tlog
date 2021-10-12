@@ -11,7 +11,7 @@ namespace tlog {
 
     class tbuf : public std::streambuf {
     public:
-        tbuf();
+        tbuf(std::string name);
 
         ~tbuf();
 
@@ -27,10 +27,13 @@ namespace tlog {
     private:
         int _fd[2];
         char buf[80];
+        int child_pid;
+
+        std::string name;
     };
 
-    extern thread_local std::istream tin;
-    extern thread_local std::ostream tout;
+    // extern thread_local std::istream tin;
+    // extern thread_local std::ostream tout;
 }
 
 #endif
