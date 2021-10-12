@@ -10,9 +10,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define likely(x)   __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-
 static void set_nonblock(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     flags |= O_NONBLOCK;
