@@ -16,9 +16,10 @@ tlog::tbuf::tbuf() {
         throw std::runtime_error("[tbuf]: fork failed!");
     } else if (pid == 0) {
         close(_fd[0]);
+        write(_fd[1], &pid, sizeof(pid));
         relay(_fd[1]);
     } else {
-        // close child fd
+        read(_fd[0], &child_pid, sizeof(child_pid));
         close(_fd[1]);
     }
 }
@@ -26,9 +27,7 @@ tlog::tbuf::tbuf() {
 tlog::tbuf::~tbuf() {
     close(_fd[0]);
     int stat;
-    do {
-        wait(&stat);
-    } while (WIFEXITED(stat));
+    waitpid(child_pid, &stat, 0);
 }
 
 std::streamsize tlog::tbuf::xsputn(const char *s, std::streamsize size) {

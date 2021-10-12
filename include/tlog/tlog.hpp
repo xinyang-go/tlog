@@ -27,6 +27,7 @@ namespace tlog {
     private:
         int _fd[2];
         char buf[80];
+        pid_t child_pid;
     };
 
     extern thread_local std::istream tin;
